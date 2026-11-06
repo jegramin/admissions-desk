@@ -4,10 +4,10 @@ import type { StaffTransaction } from '../db/staff-transaction.js';
 import type { StaffContext } from '../staff-context.js';
 import { toolError, type RunToolCall, type ToolCallResult } from '../tool-call.js';
 import type { Database } from '../db/types.js';
+import { TERMINAL_STAGES, type TerminalStage } from '../db/enums.js';
 
-type ActiveStage = Exclude<Database['public']['Enums']['inquiry_stage'], 'enrolled' | 'withdrawn' | 'lost'>;
+type ActiveStage = Exclude<Database['public']['Enums']['inquiry_stage'], TerminalStage>;
 
-const TERMINAL_STAGES = ['enrolled', 'withdrawn', 'lost'] as const;
 const ACTIVE_STAGES = ['new', 'contacted', 'tour_booked', 'applied', 'assessment', 'offered'] as const satisfies readonly ActiveStage[];
 
 const MIN_DAYS_WITHOUT_CONTACT = 1;

@@ -18,9 +18,19 @@ describe('MCP end to end (in-memory transport, admissions_app role)', () => {
   it('lists the tools', async () => {
     const { tools } = await session.client.listTools();
 
-    expect(tools.map((t) => t.name).sort()).toEqual(['find_stale_inquiries', 'get_inquiry']);
+    expect(tools.map((t) => t.name).sort()).toEqual(['find_stale_inquiries', 'get_inquiry', 'log_followup', 'pipeline_summary']);
     const getInquiry = tools.find((t) => t.name === 'get_inquiry');
     expect(getInquiry?.inputSchema.properties).toHaveProperty('include_sensitive');
+  });
+
+  it('marks the three read tools read-only and log_followup as a non-idempotent, non-destructive write', async () => {
+    const { tools } = await session.client.listTools();
+    const annotations = Object.fromEntries(tools.map((t) => [t.name, t.annotations]));
+
+    for (const name of ['find_stale_inquiries', 'get_inquiry', 'pipeline_summary']) {
+      expect(annotations[name], name).toMatchObject({ readOnlyHint: true });
+    }
+    expect(annotations['log_followup']).toMatchObject({ readOnlyHint: false, destructiveHint: false, idempotentHint: false });
   });
 
   it('calls get_inquiry and gets the record back', async () => {

@@ -22,6 +22,8 @@ export const SEED_STAFF = {
 export const SEED_INQUIRY = {
   /** Rana Jabbar, Erbil, offered. */
   erbil: '00000000-0000-0000-0003-000000000006',
+  /** Emma Steiner, Erbil, assessment, stale. log_followup tests write to it, so nothing else should rely on it. */
+  erbilStale: '00000000-0000-0000-0003-000000000005',
   dubai: '00000000-0000-0000-0003-000000000021',
 } as const;
 

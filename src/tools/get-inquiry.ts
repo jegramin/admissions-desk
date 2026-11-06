@@ -2,34 +2,10 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/server';
 import type { StaffTransaction } from '../db/staff-transaction.js';
 import type { StaffContext, StaffRole } from '../staff-context.js';
-import type { Database } from '../db/types.js';
+import { FOLLOWUP_CHANNELS, INQUIRY_SOURCES, INQUIRY_STAGES } from '../db/enums.js';
 import { toolError, type RunToolCall, type ToolCallResult } from '../tool-call.js';
 
 const TOOL_NAME = 'get_inquiry';
-
-const STAGES = [
-  'new',
-  'contacted',
-  'tour_booked',
-  'applied',
-  'assessment',
-  'offered',
-  'enrolled',
-  'withdrawn',
-  'lost',
-] as const satisfies readonly Database['public']['Enums']['inquiry_stage'][];
-
-const SOURCES = [
-  'website',
-  'referral',
-  'walk_in',
-  'agent',
-  'event',
-  'phone',
-  'social_media',
-] as const satisfies readonly Database['public']['Enums']['inquiry_source'][];
-
-const CHANNELS = ['email', 'phone', 'whatsapp', 'meeting'] as const satisfies readonly Database['public']['Enums']['followup_channel'][];
 
 export const NOT_FOUND_MESSAGE = 'Inquiry not found or not accessible.';
 export const CAMPUS_HEAD_ONLY_NOTE =
@@ -47,7 +23,7 @@ const InputSchema = z.object({
 });
 
 const FollowupSchema = z.object({
-  channel: z.enum(CHANNELS),
+  channel: z.enum(FOLLOWUP_CHANNELS),
   note: z.string(),
   loggedBy: z.string().nullable(),
   createdAt: z.string(),
@@ -62,8 +38,8 @@ const SensitiveFieldsSchema = z.object({
 const OutputSchema = z.object({
   inquiryId: z.guid(),
   campusId: z.string(),
-  stage: z.enum(STAGES),
-  source: z.enum(SOURCES),
+  stage: z.enum(INQUIRY_STAGES),
+  source: z.enum(INQUIRY_SOURCES),
   createdAt: z.string(),
   assignedStaffName: z.string().nullable(),
   applicant: z.object({
@@ -93,8 +69,8 @@ export type SensitiveFields = z.infer<typeof SensitiveFieldsSchema>;
 interface InquiryQueryRow {
   inquiry_id: string;
   campus_id: string;
-  stage: (typeof STAGES)[number];
-  source: (typeof SOURCES)[number];
+  stage: (typeof INQUIRY_STAGES)[number];
+  source: (typeof INQUIRY_SOURCES)[number];
   // postgres.js deserializes timestamptz columns as Date, not string.
   created_at: Date;
   assigned_staff_name: string | null;
@@ -110,7 +86,7 @@ interface InquiryQueryRow {
 }
 
 interface FollowupQueryRow {
-  channel: (typeof CHANNELS)[number];
+  channel: (typeof FOLLOWUP_CHANNELS)[number];
   note: string;
   created_at: Date;
   logged_by: string | null;

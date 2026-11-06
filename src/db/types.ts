@@ -231,6 +231,11 @@ isOneToOne: false
 { Args: Record<PropertyKey, never>; Returns: {
               "campus_id": string,"id": string,"role": Database["public"]['Enums']["staff_role"]
             }[]
+                           },
+"pipeline_summary":
+{ Args: { "p_campus_id": string,"p_min_days_without_contact": number }; Returns: {
+              "inquiry_count": number,"stage": Database["public"]['Enums']["inquiry_stage"],"stale_count": number
+            }[]
                            }
           }
           Enums: {

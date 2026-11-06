@@ -24,15 +24,76 @@ going through a tool.
 | `followups` (own campus) | read + insert as self | read + insert as self | — |
 | `applicant_private`: date of birth, learning support, medical notes (own campus) | — | read, only via `get_inquiry` with `include_sensitive: true` | — |
 | Anything on another campus | — | — | — |
-| Cross-campus aggregates (counts only) | — | — | a later step |
+| Pipeline counts via `pipeline_summary()` (counts only) | own campus | own campus | any campus, or all combined |
 | `audit_log` | append as self, can't read | append as self, can't read | append as self, can't read |
 
 No role can `UPDATE` or `DELETE` anything, and only `followups` and
 `audit_log` accept `INSERT`.
 
-**Leadership sees patterns, not people.** Both tools refuse leadership, and
-RLS returns zero individual rows to it. Aggregates will come from a function
-that returns counts only.
+**Leadership sees patterns, not people.** RLS returns zero individual rows
+to leadership, and every tool that returns or writes an individual record
+refuses it. Its only view of the data is `pipeline_summary`, which returns
+counts.
+
+## Tools
+
+| Tool | Kind | `counsellor` / `campus_head` | `leadership` |
+|---|---|---|---|
+| `find_stale_inquiries` | read | own campus | denied |
+| `get_inquiry` | read | own campus; sensitive fields for `campus_head` only | denied |
+| `pipeline_summary` | read, counts only | own campus; another campus is denied | any campus, or all when `campus` is omitted |
+| `log_followup` | write | own campus; another campus's or a missing id is "not found or not accessible" | denied |
+
+All four declare MCP tool annotations. The three reads set
+`readOnlyHint: true`. `log_followup` sets `readOnlyHint: false`,
+`destructiveHint: false` (it only appends) and `idempotentHint: false`
+(each call adds another followup).
+
+### `pipeline_summary`
+
+Returns the inquiry count for every stage (zero-filled), the active total
+(not `enrolled`, `withdrawn` or `lost`), and the stale count. Stale uses
+the same inclusive definition as `find_stale_inquiries`: an active stage
+with `days_since_contact >= min_days_without_contact`. It returns no names,
+ids or any other field of an individual record.
+
+It is backed by one database function,
+[`pipeline_summary(campus_id, min_days)`](../supabase/migrations/20261106230000_pipeline_summary.sql).
+Leadership has no rows under RLS, so the function has to read as its owner
+(`SECURITY DEFINER`, fixed `search_path`). That makes the function itself
+the access check:
+
+- It decides the scope from `current_staff()`, not from anything the caller
+  claims. For leadership, a null campus means every campus. Counsellors and
+  campus heads get their own campus, and asking for another raises `42501`.
+- With no identity (missing, malformed or unknown `app.staff_id`) it raises
+  `42501`, so it fails closed.
+- `EXECUTE` is granted to `admissions_app` only, and revoked from `PUBLIC`,
+  `anon` and `authenticated`.
+
+The tool checks the campus before it calls the function, so a denial is
+audited as `denied`. The function's own check is a backstop in case the
+tool's check is ever wrong. For leadership, an unknown campus id is also
+recorded as `denied`.
+
+### `log_followup`
+
+This tool records a followup that **has already happened**: a call, an
+email, a WhatsApp message or a meeting. It sends nothing and contacts
+nobody. Its description tells the model to call it only after the user
+confirms the followup took place.
+
+- It inserts into `followups` as the acting staff member. The insert selects
+  the inquiry with an explicit campus filter, so another campus's id inserts
+  nothing and returns "Inquiry not found or not accessible.", the same
+  message a missing id gets, and the call is audited as `denied`. RLS
+  (`followups_insert_as_self`) independently refuses a row for another
+  campus or another staff member.
+- It returns the inquiry's new `daysSinceContact`, read back from
+  `inquiry_activity`, so the inquiry stops appearing in
+  `find_stale_inquiries` straight away.
+- `note` is trimmed and must be 1 to 1000 characters. It is visible to every
+  counsellor and campus head on that campus.
 
 ## Database layer
 
@@ -94,7 +155,7 @@ Every tool call writes exactly one `audit_log` row:
 |---|---|
 | `staff_id` | Who made the call. RLS only accepts the current staff member. |
 | `tool_name` | Which tool was called. |
-| `arguments` | The arguments after schema validation, including defaults that were applied. |
+| `arguments` | The arguments after schema validation, including defaults that were applied. Exception: `log_followup` records only `inquiry_id` and `channel`, never `note`, because free text may contain personal details. The `followups` row is the record of the note. |
 | `outcome` | `ok`, `denied` or `error` (see below). |
 | `result_count` | Rows returned. Set only when `outcome = 'ok'`. |
 | `sensitive_returned` | `true` when the response included `applicant_private` fields. Can only be true when `outcome = 'ok'`. |
