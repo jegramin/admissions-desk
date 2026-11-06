@@ -1,0 +1,27 @@
+{
+  "name": "admissions-desk",
+  "version": "1.0.0",
+  "description": "MCP server (in progress) letting Aldermoor Schools admissions staff query inquiries across campuses through Claude.",
+  "private": true,
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "db:reset": "supabase db reset",
+    "gen:types": "supabase gen types typescript > src/db/types.ts"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "UNLICENSED",
+  "devEngines": {
+    "packageManager": {
+      "name": "pnpm",
+      "version": "^11.20.0",
+      "onFail": "download"
+    }
+  },
+  "type": "module",
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "supabase": "^3.0.0",
+    "typescript": "^7.0.2"
+  }
+}
