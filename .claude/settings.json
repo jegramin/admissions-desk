@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "mcp__admissions-desk__find_stale_inquiries",
+      "mcp__admissions-desk__get_inquiry",
+      "mcp__admissions-desk__pipeline_summary"
+    ],
+    "ask": ["mcp__admissions-desk__log_followup"]
+  }
+}

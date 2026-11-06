@@ -49,6 +49,16 @@ All four declare MCP tool annotations. The three reads set
 `destructiveHint: false` (it only appends) and `idempotentHint: false`
 (each call adds another followup).
 
+Annotations are hints, not controls. The committed
+[`.claude/settings.json`](../.claude/settings.json) is what makes a human
+approve every write. It allows the three read tools and has an `ask` rule
+for `mcp__admissions-desk__log_followup`. Claude Code checks rules in the
+order deny, ask, allow, so an allow rule in any settings file can't
+override the ask rule. It still prompts in auto mode and `bypassPermissions`,
+and in `dontAsk` mode the call is denied. Don't add an allow rule that
+covers `log_followup`, including the server-wide `mcp__admissions-desk__*`.
+It would be overridden anyway, but it makes the intent unclear.
+
 ### `pipeline_summary`
 
 Returns the inquiry count for every stage (zero-filled), the active total
