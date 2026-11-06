@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, it } from 'vitest';
 import { createRunAsStaff } from '../src/db/staff-transaction.js';
-import { connectAsAdmin, connectAsApp, PERMISSION_DENIED, SEED_STAFF } from './db.js';
+import { connectAsAdmin, connectAsApp, PERMISSION_DENIED, SEED_INQUIRY, SEED_STAFF } from './db.js';
 
 // Every assertion here runs as admissions_app, the role the MCP server
 // connects as, and queries tables directly instead of through a tool, so it
@@ -136,6 +136,66 @@ describe('writes', () => {
         code: PERMISSION_DENIED,
       });
     }
+  });
+
+  it('INSERT is denied on every table except followups and audit_log', async () => {
+    const tables = await admin<{ table_name: string }[]>`
+      select table_name from information_schema.tables
+      where table_schema = 'public' and table_type = 'BASE TABLE'
+        and table_name not in ('followups', 'audit_log')
+      order by table_name
+    `;
+    expect(tables.length).toBeGreaterThan(0);
+
+    // The privilege check runs before any row is built, so DEFAULT VALUES
+    // fails with permission denied rather than a not-null violation.
+    for (const { table_name } of tables) {
+      await expect(app`insert into ${app(table_name)} default values`, `INSERT ${table_name}`).rejects.toMatchObject({
+        code: PERMISSION_DENIED,
+      });
+    }
+  });
+});
+
+describe('followups INSERT', () => {
+  const runAsCounsellor = createRunAsStaff(app, SEED_STAFF.erbilCounsellor);
+
+  function insertFollowup(inquiryId: string, staffId: string) {
+    return runAsCounsellor(
+      (tx) => tx`
+        insert into followups (inquiry_id, staff_id, channel, note)
+        values (${inquiryId}, ${staffId}, 'email', 'RLS test followup')
+        returning id
+      `
+    );
+  }
+
+  /** An enrolled inquiry, so the extra followup can't change any staleness result. */
+  async function erbilEnrolledInquiry(): Promise<string> {
+    const [row] = await admin<{ id: string }[]>`
+      select id from inquiries where campus_id = 'erbil' and stage = 'enrolled' order by id limit 1
+    `;
+    if (!row) {
+      throw new Error('Seed has no enrolled Erbil inquiry');
+    }
+    return row.id;
+  }
+
+  it('is allowed on an own-campus inquiry as yourself', async () => {
+    const inserted = await insertFollowup(await erbilEnrolledInquiry(), SEED_STAFF.erbilCounsellor);
+    expect(inserted).toHaveLength(1);
+  });
+
+  it('is denied on another campus’s inquiry', async () => {
+    await expect(insertFollowup(SEED_INQUIRY.dubai, SEED_STAFF.erbilCounsellor)).rejects.toMatchObject({
+      code: PERMISSION_DENIED,
+    });
+  });
+
+  it('is denied with someone else’s staff_id', async () => {
+    await expect(insertFollowup(await erbilEnrolledInquiry(), SEED_STAFF.erbilCampusHead)).rejects.toMatchObject({
+      code: PERMISSION_DENIED,
+    });
   });
 });
 

@@ -18,4 +18,11 @@ export const SEED_STAFF = {
   leadership: '00000000-0000-0000-0000-000000000007',
 } as const;
 
+/** Inquiry ids from supabase/seed.sql. */
+export const SEED_INQUIRY = {
+  /** Rana Jabbar, Erbil, offered. */
+  erbil: '00000000-0000-0000-0003-000000000006',
+  dubai: '00000000-0000-0000-0003-000000000021',
+} as const;
+
 export const PERMISSION_DENIED = '42501';

@@ -1,7 +1,8 @@
 import { z } from 'zod';
-import type { CallToolResult, McpServer } from '@modelcontextprotocol/server';
-import type { RunAsStaff, StaffTransaction } from '../db/staff-transaction.js';
+import type { McpServer } from '@modelcontextprotocol/server';
+import type { StaffTransaction } from '../db/staff-transaction.js';
 import type { StaffContext } from '../staff-context.js';
+import { toolError, type RunToolCall, type ToolCallResult } from '../tool-call.js';
 import type { Database } from '../db/types.js';
 
 type ActiveStage = Exclude<Database['public']['Enums']['inquiry_stage'], 'enrolled' | 'withdrawn' | 'lost'>;
@@ -64,10 +65,6 @@ interface QueryRow {
   assigned_staff_name: string | null;
 }
 
-function toolError(text: string): CallToolResult {
-  return { content: [{ type: 'text', text }], isError: true };
-}
-
 function renderRow(row: StaleInquiryRow): string {
   const contact = row.neverContacted
     ? `never contacted (${row.daysSinceContact}d since created)`
@@ -126,9 +123,11 @@ export async function queryStaleInquiries(
   }));
 }
 
-export function registerFindStaleInquiriesTool(server: McpServer, runAsStaff: RunAsStaff, staff: StaffContext): void {
+const TOOL_NAME = 'find_stale_inquiries';
+
+export function registerFindStaleInquiriesTool(server: McpServer, runToolCall: RunToolCall, staff: StaffContext): void {
   server.registerTool(
-    'find_stale_inquiries',
+    TOOL_NAME,
     {
       title: 'Find stale inquiries',
       description:
@@ -137,35 +136,46 @@ export function registerFindStaleInquiriesTool(server: McpServer, runAsStaff: Ru
       outputSchema: OutputSchema,
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: false },
     },
-    async ({ min_days_without_contact: minDays, campus }): Promise<CallToolResult> => {
-      if (staff.role === 'leadership') {
-        return toolError(
-          'Leadership accounts can only see aggregate data across campuses, never individual inquiry records. This tool returns per-inquiry rows, so it is not available to leadership.'
-        );
-      }
+    async (args) =>
+      runToolCall(TOOL_NAME, args, async (tx): Promise<ToolCallResult> => {
+        const { min_days_without_contact: minDays, campus } = args;
 
-      const campusId = staff.campusId;
-      if (campusId === null) {
-        throw new Error(`Staff ${staff.id} has role ${staff.role} but no campus_id`);
-      }
+        if (staff.role === 'leadership') {
+          return {
+            outcome: 'denied',
+            result: toolError(
+              'Leadership accounts can only see aggregate data across campuses, never individual inquiry records. This tool returns per-inquiry rows, so it is not available to leadership.'
+            ),
+          };
+        }
 
-      if (campus !== undefined && campus !== campusId) {
-        return toolError(
-          `Access denied: you are a ${staff.role} for campus "${campusId}" and can only view inquiries for your own campus. You requested campus "${campus}".`
-        );
-      }
+        const campusId = staff.campusId;
+        if (campusId === null) {
+          throw new Error(`Staff ${staff.id} has role ${staff.role} but no campus_id`);
+        }
 
-      const inquiries = await runAsStaff((tx) => queryStaleInquiries(tx, campusId, minDays));
+        if (campus !== undefined && campus !== campusId) {
+          return {
+            outcome: 'denied',
+            result: toolError(
+              `Access denied: you are a ${staff.role} for campus "${campusId}" and can only view inquiries for your own campus. You requested campus "${campus}".`
+            ),
+          };
+        }
 
-      const text =
-        inquiries.length === 0
-          ? `No active inquiries in ${campusId} have gone ${minDays}+ whole days without contact.`
-          : `${inquiries.length} active inquiries in ${campusId} have gone ${minDays}+ whole days without contact:\n${inquiries.map(renderRow).join('\n')}`;
+        const inquiries = await queryStaleInquiries(tx, campusId, minDays);
 
-      return {
-        content: [{ type: 'text', text }],
-        structuredContent: { inquiries },
-      };
-    }
+        const text =
+          inquiries.length === 0
+            ? `No active inquiries in ${campusId} have gone ${minDays}+ whole days without contact.`
+            : `${inquiries.length} active inquiries in ${campusId} have gone ${minDays}+ whole days without contact:\n${inquiries.map(renderRow).join('\n')}`;
+
+        return {
+          outcome: 'ok',
+          result: { content: [{ type: 'text', text }], structuredContent: { inquiries } },
+          resultCount: inquiries.length,
+          sensitiveReturned: false,
+        };
+      })
   );
 }

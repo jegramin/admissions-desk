@@ -22,6 +22,7 @@
   },
   "type": "module",
   "devDependencies": {
+    "@modelcontextprotocol/client": "2.4.0",
     "@types/node": "^26.6.6",
     "supabase": "^3.0.0",
     "typescript": "^7.0.2",

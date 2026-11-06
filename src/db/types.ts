@@ -65,14 +65,14 @@ isOneToOne: false
                   ]
                 },"audit_log": {
                   Row: {
-                    "allowed": boolean,"arguments": NonNullable<Json>,"created_at": string,"id": string,"result_count": number | null,"staff_id": string,"tool_name": string
+                    "arguments": NonNullable<Json>,"created_at": string,"id": string,"outcome": Database["public"]['Enums']["audit_outcome"],"result_count": number | null,"sensitive_returned": boolean,"staff_id": string,"tool_name": string
                   }
                   ComputedFields: never
                   Insert: {
-                    "allowed": boolean,"arguments"?: NonNullable<Json>,"created_at"?: string,"id"?: string,"result_count"?: number | null,"staff_id": string,"tool_name": string
+                    "arguments"?: NonNullable<Json>,"created_at"?: string,"id"?: string,"outcome": Database["public"]['Enums']["audit_outcome"],"result_count"?: number | null,"sensitive_returned"?: boolean,"staff_id": string,"tool_name": string
                   }
                   Update: {
-                    "allowed"?: boolean,"arguments"?: NonNullable<Json>,"created_at"?: string,"id"?: string,"result_count"?: number | null,"staff_id"?: string,"tool_name"?: string
+                    "arguments"?: NonNullable<Json>,"created_at"?: string,"id"?: string,"outcome"?: Database["public"]['Enums']["audit_outcome"],"result_count"?: number | null,"sensitive_returned"?: boolean,"staff_id"?: string,"tool_name"?: string
                   }
                   Relationships: [
                     {
@@ -227,10 +227,14 @@ isOneToOne: false
                 }
           }
           Functions: {
-            [_ in never]: never
+            "current_staff":
+{ Args: Record<PropertyKey, never>; Returns: {
+              "campus_id": string,"id": string,"role": Database["public"]['Enums']["staff_role"]
+            }[]
+                           }
           }
           Enums: {
-            "followup_channel": "email"|"phone"|"whatsapp"|"meeting","inquiry_source": "website"|"referral"|"walk_in"|"agent"|"event"|"phone"|"social_media","inquiry_stage": "new"|"contacted"|"tour_booked"|"applied"|"assessment"|"offered"|"enrolled"|"withdrawn"|"lost","staff_role": "counsellor"|"campus_head"|"leadership"
+            "audit_outcome": "ok"|"denied"|"error","followup_channel": "email"|"phone"|"whatsapp"|"meeting","inquiry_source": "website"|"referral"|"walk_in"|"agent"|"event"|"phone"|"social_media","inquiry_stage": "new"|"contacted"|"tour_booked"|"applied"|"assessment"|"offered"|"enrolled"|"withdrawn"|"lost","staff_role": "counsellor"|"campus_head"|"leadership"
           }
           CompositeTypes: {
             [_ in never]: never
@@ -350,7 +354,7 @@ export const Constants = {
           }
         },"public": {
           Enums: {
-            "followup_channel": ["email", "phone", "whatsapp", "meeting"],"inquiry_source": ["website", "referral", "walk_in", "agent", "event", "phone", "social_media"],"inquiry_stage": ["new", "contacted", "tour_booked", "applied", "assessment", "offered", "enrolled", "withdrawn", "lost"],"staff_role": ["counsellor", "campus_head", "leadership"]
+            "audit_outcome": ["ok", "denied", "error"],"followup_channel": ["email", "phone", "whatsapp", "meeting"],"inquiry_source": ["website", "referral", "walk_in", "agent", "event", "phone", "social_media"],"inquiry_stage": ["new", "contacted", "tour_booked", "applied", "assessment", "offered", "enrolled", "withdrawn", "lost"],"staff_role": ["counsellor", "campus_head", "leadership"]
           }
         }
 } as const

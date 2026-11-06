@@ -5,8 +5,8 @@ export type StaffTransaction = TransactionSql;
 
 /**
  * Runs `work` in a transaction whose row level security identity is the
- * acting staff member. This is the only database handle tools receive, so a
- * tool query cannot run without an identity set.
+ * acting staff member. Tools never get this directly: they get RunToolCall
+ * (src/tool-call.ts), which builds on it and also writes the audit row.
  */
 export type RunAsStaff = <T>(work: (tx: StaffTransaction) => Promise<T>) => Promise<T>;
 
