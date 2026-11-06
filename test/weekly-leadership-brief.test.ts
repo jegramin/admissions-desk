@@ -42,6 +42,8 @@ describe('weekly_leadership_brief prompt', () => {
     const { prompts } = await leadership.client.listPrompts();
     const brief = prompts.find((p) => p.name === PROMPT_NAME);
 
+    // Vitest types asymmetric matchers as `any`; the matcher is the assertion.
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     expect(brief?.arguments).toEqual([{ name: 'campus', description: expect.any(String), required: false }]);
   });
 

@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      # package.json declares pnpm under devEngines, which this action doesn't
+      # read, so the version is pinned here. Keep it within devEngines' range.
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11.28.11
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: lts/*
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # No version input: the action reads the CLI version from pnpm-lock.yaml,
+      # so CI runs the same CLI as local development.
+      - uses: supabase/setup-cli@v3
+
+      # Tests talk to Postgres only, so start just the database container
+      # rather than the full stack. Ports (553xx) come from supabase/config.toml.
+      - run: supabase db start
+
+      - run: supabase db reset
+
+      # No env vars or secrets: test/env.ts defaults to the local-only
+      # credentials on the remapped ports, exactly as on a developer machine.
+      - run: pnpm verify

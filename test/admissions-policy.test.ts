@@ -60,6 +60,8 @@ describe('admissions policy resource', () => {
     const read = counsellor.client.readResource({ uri: 'admissions://policy/atlantis' });
 
     await expect(read).rejects.toMatchObject({
+      // Vitest types asymmetric matchers as `any`; the matcher is the assertion.
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       message: expect.stringContaining('No admissions policy for campus "atlantis". Known campuses: erbil, dubai, vienna.'),
     });
     await expect(read).rejects.toMatchObject({ code: INVALID_PARAMS });
