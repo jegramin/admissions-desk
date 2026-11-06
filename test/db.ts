@@ -15,6 +15,8 @@ export function connectAsAdmin(): postgres.Sql {
 export const SEED_STAFF = {
   erbilCounsellor: '00000000-0000-0000-0000-000000000001',
   erbilCampusHead: '00000000-0000-0000-0000-000000000002',
+  dubaiCounsellor: '00000000-0000-0000-0000-000000000003',
+  viennaCounsellor: '00000000-0000-0000-0000-000000000005',
   leadership: '00000000-0000-0000-0000-000000000007',
 } as const;
 

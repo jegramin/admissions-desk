@@ -103,7 +103,59 @@ confirms the followup took place.
   `inquiry_activity`, so the inquiry stops appearing in
   `find_stale_inquiries` straight away.
 - `note` is trimmed and must be 1 to 1000 characters. It is visible to every
-  counsellor and campus head on that campus.
+  counsellor and campus head on that campus. The description tells the model
+  to record only what was communicated and the next step, and to leave out
+  medical, learning support, safeguarding or other sensitive details (and
+  tell the user those belong with the campus head). That is guidance to the
+  model, not a control: the server does not inspect the note's content.
+
+## Resources and prompts
+
+Neither one is a tool call. Neither touches the database, so neither runs as
+a staff identity or writes an `audit_log` row.
+
+| Kind | Name | All roles | Audited |
+|---|---|---|---|
+| Resource template | `admissions://policy/{campus}` | read | no |
+| Prompt | `weekly_leadership_brief` | get | no (the `pipeline_summary` call it asks for is) |
+
+### `admissions://policy/{campus}`
+
+Each campus's admissions policy, served from
+[`content/policy/<campus>.md`](../content/policy/): intake dates, grades
+offered, fee ranges, required documents and the 3-working-day reply
+standard. It is all **fictional demo content**, and each file says so at the
+top.
+
+Every role, leadership included, can read it, and reads are not audited. That
+is deliberate: policy content is public-facing information about the school,
+not data about any family or staff member. The audit log exists to record
+access to personal data, and reading a policy accesses none. The list
+callback returns one resource per campus. An unknown campus returns
+"No admissions policy for campus …" with the known campus ids.
+
+If a policy ever needs to hold something that isn't for every role, it has
+to move behind a tool and `runToolCall`. Don't add role checks to the resource.
+
+### `weekly_leadership_brief`
+
+One optional argument, `campus`. It returns a single user message that tells
+the model to call `pipeline_summary` (every campus combined unless `campus`
+is given) and write a brief for senior leadership, under 200 words: pipeline
+by stage, the stale count against the reply standard, two or three risks,
+and suggested actions, with no names or individual records.
+
+The prompt contains instructions only and no data. Every number comes from
+the `pipeline_summary` call, which goes through `runToolCall` with the usual
+role checks and auditing. Any role can get the prompt, but a counsellor or
+campus head who asks it for another campus gets the tool's usual denial.
+
+`pipeline_summary` counts calendar days, and the standard is 3 **working**
+days. The prompt uses `min_days_without_contact: 6`. Three working days span
+at most five calendar days, so 6+ has missed the standard on every campus's
+working week (Erbil Sunday–Thursday, Dubai and Vienna Monday–Friday). The
+number is a lower bound, because it ignores public holidays and catches some
+breaches a day or two late. The prompt tells the model to say so.
 
 ## Database layer
 

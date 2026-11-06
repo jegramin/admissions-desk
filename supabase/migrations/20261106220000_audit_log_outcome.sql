@@ -6,7 +6,7 @@
 -- written to it yet), so the column swap loses no history.
 --
 -- Every MCP tool call writes exactly one row, from the server's per-call
--- helper (src/db/tool-call.ts), in the same transaction as the call's reads.
+-- helper (src/tool-call.ts), in the same transaction as the call's reads.
 -- If that insert fails, the tool returns an error and no data.
 
 create type audit_outcome as enum ('ok', 'denied', 'error');

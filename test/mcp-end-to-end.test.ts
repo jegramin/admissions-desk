@@ -33,6 +33,14 @@ describe('MCP end to end (in-memory transport, admissions_app role)', () => {
     expect(annotations['log_followup']).toMatchObject({ readOnlyHint: false, destructiveHint: false, idempotentHint: false });
   });
 
+  it('lists the admissions policy resource template and the leadership brief prompt', async () => {
+    const { resourceTemplates } = await session.client.listResourceTemplates();
+    const { prompts } = await session.client.listPrompts();
+
+    expect(resourceTemplates).toMatchObject([{ name: 'admissions_policy', uriTemplate: 'admissions://policy/{campus}' }]);
+    expect(prompts.map((p) => p.name)).toEqual(['weekly_leadership_brief']);
+  });
+
   it('calls get_inquiry and gets the record back', async () => {
     const result = await session.client.callTool({ name: 'get_inquiry', arguments: { inquiry_id: SEED_INQUIRY.erbil } });
 

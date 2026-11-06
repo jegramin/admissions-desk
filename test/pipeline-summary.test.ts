@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type postgres from 'postgres';
+import { z } from 'zod';
 import { auditMarker, auditRowsSince } from './audit.js';
 import { connectAsAdmin, connectAsApp, PERMISSION_DENIED, SEED_STAFF } from './db.js';
 import { connectMcpClient, textOf, type McpSession } from './mcp.js';
@@ -122,6 +123,41 @@ describe('pipeline_summary as a counsellor', () => {
       { tool_name: 'pipeline_summary', arguments: { campus: 'dubai' }, outcome: 'denied', result_count: null },
     ]);
   });
+});
+
+// The stale definition lives twice: the stage list in the pipeline_summary
+// SQL function and TERMINAL_STAGES in TypeScript (find_stale_inquiries). If
+// either drifts, the two tools disagree for the same campus and threshold.
+describe('pipeline_summary agrees with find_stale_inquiries', () => {
+  const FIND_STALE_ROW_CAP = 50;
+  const counsellorByCampus = [
+    { campus: 'erbil', staffId: SEED_STAFF.erbilCounsellor },
+    { campus: 'dubai', staffId: SEED_STAFF.dubaiCounsellor },
+    { campus: 'vienna', staffId: SEED_STAFF.viennaCounsellor },
+  ];
+
+  it.each(counsellorByCampus.flatMap(({ campus, staffId }) => [1, MIN_DAYS, 6].map((minDays) => ({ campus, staffId, minDays }))))(
+    '$campus at $minDays+ days: stale count equals the stale rows returned',
+    async ({ staffId, minDays }) => {
+      const session = await connectMcpClient(app, staffId);
+      try {
+        const args = { min_days_without_contact: minDays };
+        const summary = await callSummary(session, args);
+        const stale = await session.client.callTool({ name: 'find_stale_inquiries', arguments: args });
+
+        expect(summary.isError).toBeFalsy();
+        expect(stale.isError).toBeFalsy();
+        const { staleCount } = z.object({ staleCount: z.number().int() }).parse(summary.structuredContent);
+        const { inquiries } = z.object({ inquiries: z.array(z.unknown()) }).parse(stale.structuredContent);
+        // Below the cap, so a mismatch is drift and not truncation.
+        expect(inquiries.length).toBeLessThan(FIND_STALE_ROW_CAP);
+        expect(staleCount).toBeGreaterThan(0);
+        expect(inquiries).toHaveLength(staleCount);
+      } finally {
+        await session.close();
+      }
+    }
+  );
 });
 
 describe('pipeline_summary database function', () => {
