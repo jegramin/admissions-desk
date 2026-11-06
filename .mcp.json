@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "admissions-desk": {
+      "command": "node",
+      "args": ["dist/index.js"],
+      "env": {
+        "DATABASE_URL": "${DATABASE_URL:-postgresql://postgres:postgres@127.0.0.1:55322/postgres}",
+        "ADMISSIONS_STAFF_ID": "${ADMISSIONS_STAFF_ID:-00000000-0000-0000-0000-000000000001}"
+      }
+    }
+  }
+}

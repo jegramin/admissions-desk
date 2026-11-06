@@ -95,28 +95,58 @@ const STAGES = [
   'new', 'contacted', 'tour_booked', 'applied', 'assessment', 'offered', 'enrolled', 'withdrawn', 'lost',
 ];
 
-const FOLLOWUP_NOTES = {
-  email: [
-    'Sent welcome email with campus brochure.',
-    'Emailed admissions checklist and next steps.',
-    'Followed up by email after the open day.',
+// Followup histories are built from the funnel, not drawn at random: each
+// stage's history is the previous stage's plus one milestone, so the latest
+// followup always explains the inquiry's current stage. Each milestone has a
+// few interchangeable wordings, picked by inquiry number for variety.
+const FUNNEL_MILESTONES = [
+  [ // initial contact
+    { channel: 'phone', note: 'Called to introduce the school and answer initial questions.' },
+    { channel: 'email', note: 'Replied to the inquiry with a welcome email and campus brochure.' },
+    { channel: 'whatsapp', note: 'Sent a WhatsApp introduction; family confirmed their interest.' },
   ],
-  phone: [
-    'Called to confirm interest and answer questions.',
-    'Phone call to discuss entry requirements.',
-    'Checked in by phone on application progress.',
+  [ // tour booking
+    { channel: 'whatsapp', note: 'Sent the tour booking link; family booked a campus tour.' },
+    { channel: 'email', note: 'Confirmed the campus tour date and time by email.' },
+    { channel: 'phone', note: 'Booked a campus tour by phone.' },
   ],
-  whatsapp: [
-    'Sent WhatsApp message with tour booking link.',
-    'Quick WhatsApp check-in on documents needed.',
+  [ // application received
+    { channel: 'email', note: 'Application form and supporting documents received.' },
+    { channel: 'meeting', note: 'Toured campus with the family; they submitted their application afterwards.' },
   ],
-  meeting: [
-    'Met with family on campus for a tour.',
-    'Admissions meeting to discuss assessment results.',
+  [ // assessment scheduled
+    { channel: 'email', note: 'Entry assessment scheduled; date confirmed with the family.' },
+    { channel: 'phone', note: 'Called to schedule the entry assessment.' },
   ],
+  [ // offer sent
+    { channel: 'email', note: 'Offer letter sent following the assessment review.' },
+    { channel: 'meeting', note: 'Met the family to discuss assessment results and present the offer.' },
+  ],
+  [ // offer accepted / enrolment confirmed
+    { channel: 'email', note: 'Offer accepted; enrolment confirmed and deposit received.' },
+    { channel: 'meeting', note: 'Enrolment meeting held; offer accepted and registration completed.' },
+  ],
+];
+
+// How many funnel milestones an inquiry at each active/enrolled stage has
+// reached. withdrawn/lost are handled separately: some funnel progress, then
+// a closing followup that says why.
+const MILESTONES_REACHED = {
+  new: 0, contacted: 1, tour_booked: 2, applied: 3, assessment: 4, offered: 5, enrolled: 6,
 };
 
-const FOLLOWUP_CHANNELS = ['email', 'phone', 'whatsapp', 'meeting'];
+const CLOSING_FOLLOWUPS = {
+  withdrawn: [
+    { channel: 'email', note: 'Family withdrew the application: relocating to another country.' },
+    { channel: 'phone', note: 'Family called to withdraw; they have decided to defer entry by a year.' },
+    { channel: 'email', note: 'Family withdrew: the daily commute to campus proved too long.' },
+  ],
+  lost: [
+    { channel: 'phone', note: 'Family accepted a place at another school; closed as lost.' },
+    { channel: 'email', note: 'Family found the fees outside their budget; closed as lost.' },
+    { channel: 'phone', note: 'Family chose a school closer to home; closed as lost.' },
+  ],
+};
 
 const lines = [];
 const say = (s) => lines.push(s);
@@ -157,23 +187,57 @@ say('');
 // guaranteeing >=5 distinct stages per campus (all 9 appear, in fact).
 const stageFor = (i) => STAGES[i % STAGES.length];
 
-// Followup plan per (campusId, i). Returns an array of "days ago" values,
-// one per followup for that inquiry (empty array = no followups at all).
-// See docs/access-model.md / migration header for why these buckets exist:
-//   - erbil i=0..5: the required "6 active Erbil, stale 5+ days" bucket
-//   - (dubai|vienna, i=3): the required "no followups at all" bucket
-//   - i%9 in {7,8} (withdrawn/lost): old followups that must NOT read as stale
-//   - i%9 in {2,4} outside the above: two followups, to exercise "latest
-//     followup wins" in the inquiry_activity view
-//   - everything else: one recent followup
-function followupPlanFor(campusId, i) {
-  if (campusId === 'erbil' && i <= 5) return [6 + i];
-  if ((campusId === 'dubai' || campusId === 'vienna') && i === 3) return [];
-  const stageIdx = i % STAGES.length;
-  if (stageIdx === 7 || stageIdx === 8) return [35]; // withdrawn / lost
-  if (stageIdx === 6) return [15]; // enrolled
-  if (stageIdx === 2 || stageIdx === 4) return [10, (i % 4) + 1]; // tour_booked / assessment: two touches
-  return [(i % 4) + 1];
+const pick = (variants, k) => variants[k % variants.length];
+
+// The followups an inquiry has had, oldest first, as { channel, note, isClosing }.
+function followupHistoryFor(stage, n) {
+  if (stage === 'withdrawn' || stage === 'lost') {
+    // Withdrawn families got as far as an offer at most; lost ones dropped
+    // out before applying or during assessment.
+    const reached = stage === 'withdrawn' ? 1 + (n % 5) : 1 + (n % 4);
+    const funnel = FUNNEL_MILESTONES.slice(0, reached).map((variants) => pick(variants, n));
+    return [...funnel, { ...pick(CLOSING_FOLLOWUPS[stage], n), isClosing: true }];
+  }
+  return FUNNEL_MILESTONES.slice(0, MILESTONES_REACHED[stage]).map((variants, step) => ({
+    ...pick(variants, n),
+    isClosing: stage === 'enrolled' && step === FUNNEL_MILESTONES.length - 1,
+  }));
+}
+
+// How many days ago the inquiry was last touched: the latest followup, or
+// created_at for a never-contacted (stage 'new') inquiry. This is what
+// inquiry_activity.days_since_contact reports, so it carries the demo
+// guarantees:
+//   - erbil i=0..5 (stages new..offered): exactly 6..11 days — the required
+//     "6 active Erbil inquiries stale for more than 5 days" bucket
+//   - every other active Erbil inquiry: 1..4 days, so that bucket stays
+//     exactly six
+//   - dubai/vienna i=0 (stage new): 14 days — stale and never contacted
+//   - every stage 'new' inquiry has no followups — the never-contacted bucket
+//   - enrolled / withdrawn / lost: weeks old, but terminal, so never stale
+function lastTouchDaysAgoFor(campusId, i, n, stage) {
+  if (campusId === 'erbil' && i <= 5) return 6 + i;
+  if (stage === 'new' && i === 0) return 14;
+  if (stage === 'enrolled') return 15;
+  if (stage === 'withdrawn' || stage === 'lost') return 28 + (n % 10);
+  return (n % 4) + 1;
+}
+
+// Lays the history out backwards from the last touch: followups a few days
+// apart, and the inquiry created a day or two before the first one. Whole
+// days only, so days_since_contact is exact.
+function timelineFor(campusId, i, n, stage) {
+  const lastTouch = lastTouchDaysAgoFor(campusId, i, n, stage);
+  const history = followupHistoryFor(stage, n);
+  if (history.length === 0) return { createdDaysAgo: lastTouch, followups: [] };
+
+  const gapDays = 3 + (n % 3);
+  const followups = history.map((followup, idx) => ({
+    ...followup,
+    daysAgo: lastTouch + (history.length - 1 - idx) * gapDays,
+  }));
+  const firstFollowupDaysAgo = lastTouch + (history.length - 1) * gapDays;
+  return { createdDaysAgo: firstFollowupDaysAgo + 1 + (n % 2), followups };
 }
 
 const guardianRows = [];
@@ -207,7 +271,7 @@ CAMPUSES.forEach((campus, campusIdx) => {
 
     const gradeIdx = n % GRADES.length;
     const grade = GRADES[gradeIdx];
-    const entryYear = 2026 + (n % 2); // 2026 or 2027
+    const entryYear = 2027 + (n % 2); // upcoming intakes: 2027 or 2028
     const isEarlyYears = gradeIdx <= 1; // KG1 / KG2 -> not yet in a school
     const currentSchool = isEarlyYears ? null : SCHOOLS[n % SCHOOLS.length];
 
@@ -233,18 +297,20 @@ CAMPUSES.forEach((campus, campusIdx) => {
     const assignedStaffN = escalated ? CAMPUS_HEAD_OF[campus.id] : COUNSELLOR_OF[campus.id];
     const assignedStaffId = staffId(assignedStaffN);
 
+    const timeline = timelineFor(campus.id, i, n, stage);
+
     inquiryRows.push(
-      `  (${sqlStr(iqId)}, ${sqlStr(campus.id)}, ${sqlStr(aId)}, ${sqlStr(gId)}, ${sqlStr(assignedStaffId)}, ${sqlStr(source)}, ${sqlStr(stage)}, now() - interval '${(n % 90) + 10} days')`
+      `  (${sqlStr(iqId)}, ${sqlStr(campus.id)}, ${sqlStr(aId)}, ${sqlStr(gId)}, ${sqlStr(assignedStaffId)}, ${sqlStr(source)}, ${sqlStr(stage)}, now() - interval '${timeline.createdDaysAgo} days')`
     );
 
-    const daysAgoList = followupPlanFor(campus.id, i);
-    daysAgoList.forEach((daysAgo, touchIdx) => {
+    // The counsellor works the funnel; the closing followup on an escalated
+    // inquiry is logged by the campus head it was escalated to.
+    const counsellorId = staffId(COUNSELLOR_OF[campus.id]);
+    timeline.followups.forEach(({ channel, note, isClosing, daysAgo }) => {
       followupCounter += 1;
-      const channel = FOLLOWUP_CHANNELS[followupCounter % FOLLOWUP_CHANNELS.length];
-      const notePool = FOLLOWUP_NOTES[channel];
-      const note = notePool[followupCounter % notePool.length];
+      const loggedBy = isClosing ? assignedStaffId : counsellorId;
       followupRows.push(
-        `  (${sqlStr(followupId(followupCounter))}, ${sqlStr(iqId)}, ${sqlStr(assignedStaffId)}, ${sqlStr(channel)}, ${sqlStr(note)}, now() - interval '${daysAgo} days')`
+        `  (${sqlStr(followupId(followupCounter))}, ${sqlStr(iqId)}, ${sqlStr(loggedBy)}, ${sqlStr(channel)}, ${sqlStr(note)}, now() - interval '${daysAgo} days')`
       );
     });
   }

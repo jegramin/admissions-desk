@@ -206,7 +206,7 @@ isOneToOne: false
           Views: {
             "inquiry_activity": {
                   Row: {
-                    "assigned_staff_id": string | null,"campus_id": string,"days_since_contact": number | null,"inquiry_id": string,"last_contact_at": string | null,"stage": Database["public"]['Enums']["inquiry_stage"]
+                    "assigned_staff_id": string | null,"campus_id": string,"days_since_contact": number | null,"inquiry_id": string,"last_contact_at": string | null,"never_contacted": boolean | null,"stage": Database["public"]['Enums']["inquiry_stage"]
                   }
                   ComputedFields: never
                   Relationships: [
