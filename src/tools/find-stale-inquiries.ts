@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { CallToolResult, McpServer } from '@modelcontextprotocol/server';
-import type { Sql } from '../db/client.js';
+import type { RunAsStaff, StaffTransaction } from '../db/staff-transaction.js';
 import type { StaffContext } from '../staff-context.js';
 import type { Database } from '../db/types.js';
 
@@ -49,7 +49,7 @@ const OutputSchema = z.object({
   inquiries: z.array(StaleInquiryRowSchema),
 });
 
-type StaleInquiryRow = z.infer<typeof StaleInquiryRowSchema>;
+export type StaleInquiryRow = z.infer<typeof StaleInquiryRowSchema>;
 
 interface QueryRow {
   inquiry_id: string;
@@ -75,7 +75,58 @@ function renderRow(row: StaleInquiryRow): string {
   return `- [${row.stage}] ${row.applicantName} (${row.entryGrade}, ${row.entryYear}) — ${contact} — guardian: ${row.guardianName} (${row.preferredLanguage}) — staff: ${row.assignedStaffName ?? 'unassigned'} — ${row.inquiryId}`;
 }
 
-export function registerFindStaleInquiriesTool(server: McpServer, sql: Sql, staff: StaffContext): void {
+/**
+ * Active inquiries in `campusId` with daysSinceContact >= `minDays`, most
+ * stale first. The campus filter is kept here even though RLS also scopes
+ * rows to the caller's campus: either layer alone must be enough.
+ */
+export async function queryStaleInquiries(
+  tx: StaffTransaction,
+  campusId: string,
+  minDays: number
+): Promise<StaleInquiryRow[]> {
+  // days_since_contact and never_contacted come straight from the
+  // inquiry_activity view, the single definition of staleness. The filter
+  // and the reported number read the same column, so they cannot disagree.
+  const rows = await tx<QueryRow[]>`
+    select
+      ia.inquiry_id,
+      a.first_name || ' ' || a.last_name as applicant_name,
+      a.entry_grade,
+      a.entry_year,
+      ia.stage,
+      ia.days_since_contact,
+      ia.never_contacted,
+      g.full_name as guardian_name,
+      g.preferred_language,
+      s.full_name as assigned_staff_name
+    from inquiry_activity ia
+    join inquiries i on i.id = ia.inquiry_id
+    join applicants a on a.id = i.applicant_id
+    join guardians g on g.id = i.guardian_id
+    left join staff s on s.id = ia.assigned_staff_id
+    where ia.campus_id = ${campusId}
+      and ia.stage not in ${tx(TERMINAL_STAGES)}
+      and ia.days_since_contact >= ${minDays}
+    order by ia.days_since_contact desc
+    limit 50
+  `;
+
+  return rows.map((row) => ({
+    inquiryId: row.inquiry_id,
+    applicantName: row.applicant_name,
+    entryGrade: row.entry_grade,
+    entryYear: row.entry_year,
+    stage: row.stage,
+    daysSinceContact: row.days_since_contact,
+    neverContacted: row.never_contacted,
+    guardianName: row.guardian_name,
+    preferredLanguage: row.preferred_language,
+    assignedStaffName: row.assigned_staff_name,
+  }));
+}
+
+export function registerFindStaleInquiriesTool(server: McpServer, runAsStaff: RunAsStaff, staff: StaffContext): void {
   server.registerTool(
     'find_stale_inquiries',
     {
@@ -104,45 +155,7 @@ export function registerFindStaleInquiriesTool(server: McpServer, sql: Sql, staf
         );
       }
 
-      // days_since_contact and never_contacted come straight from the
-      // inquiry_activity view, the single definition of staleness. The filter
-      // and the reported number read the same column, so they cannot disagree.
-      const rows = await sql<QueryRow[]>`
-        select
-          ia.inquiry_id,
-          a.first_name || ' ' || a.last_name as applicant_name,
-          a.entry_grade,
-          a.entry_year,
-          ia.stage,
-          ia.days_since_contact,
-          ia.never_contacted,
-          g.full_name as guardian_name,
-          g.preferred_language,
-          s.full_name as assigned_staff_name
-        from inquiry_activity ia
-        join inquiries i on i.id = ia.inquiry_id
-        join applicants a on a.id = i.applicant_id
-        join guardians g on g.id = i.guardian_id
-        left join staff s on s.id = ia.assigned_staff_id
-        where ia.campus_id = ${campusId}
-          and ia.stage not in ${sql(TERMINAL_STAGES)}
-          and ia.days_since_contact >= ${minDays}
-        order by ia.days_since_contact desc
-        limit 50
-      `;
-
-      const inquiries: StaleInquiryRow[] = rows.map((row) => ({
-        inquiryId: row.inquiry_id,
-        applicantName: row.applicant_name,
-        entryGrade: row.entry_grade,
-        entryYear: row.entry_year,
-        stage: row.stage,
-        daysSinceContact: row.days_since_contact,
-        neverContacted: row.never_contacted,
-        guardianName: row.guardian_name,
-        preferredLanguage: row.preferred_language,
-        assignedStaffName: row.assigned_staff_name,
-      }));
+      const inquiries = await runAsStaff((tx) => queryStaleInquiries(tx, campusId, minDays));
 
       const text =
         inquiries.length === 0

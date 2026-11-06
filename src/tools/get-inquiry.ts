@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { CallToolResult, McpServer } from '@modelcontextprotocol/server';
-import type { Sql } from '../db/client.js';
+import type { RunAsStaff } from '../db/staff-transaction.js';
 import type { StaffContext } from '../staff-context.js';
 import type { Database } from '../db/types.js';
 
@@ -112,7 +112,7 @@ function renderResult(result: InquiryResult): string {
   ].join('\n');
 }
 
-export function registerGetInquiryTool(server: McpServer, sql: Sql, staff: StaffContext): void {
+export function registerGetInquiryTool(server: McpServer, runAsStaff: RunAsStaff, staff: StaffContext): void {
   server.registerTool(
     'get_inquiry',
     {
@@ -135,44 +135,53 @@ export function registerGetInquiryTool(server: McpServer, sql: Sql, staff: Staff
         throw new Error(`Staff ${staff.id} has role ${staff.role} but no campus_id`);
       }
 
-      const rows = await sql<InquiryQueryRow[]>`
-        select
-          i.id as inquiry_id,
-          i.campus_id,
-          i.stage,
-          i.source,
-          i.created_at,
-          s.full_name as assigned_staff_name,
-          a.first_name,
-          a.last_name,
-          a.entry_grade,
-          a.entry_year,
-          a.current_school,
-          g.full_name as guardian_name,
-          g.email as guardian_email,
-          g.phone as guardian_phone,
-          g.preferred_language
-        from inquiries i
-        join applicants a on a.id = i.applicant_id
-        join guardians g on g.id = i.guardian_id
-        left join staff s on s.id = i.assigned_staff_id
-        where i.id = ${inquiry_id}
-          and i.campus_id = ${campusId}
-      `;
+      // One transaction for both reads, so they run as the same identity
+      // against the same snapshot.
+      const { inquiry, followupRows } = await runAsStaff(async (tx) => {
+        const rows = await tx<InquiryQueryRow[]>`
+          select
+            i.id as inquiry_id,
+            i.campus_id,
+            i.stage,
+            i.source,
+            i.created_at,
+            s.full_name as assigned_staff_name,
+            a.first_name,
+            a.last_name,
+            a.entry_grade,
+            a.entry_year,
+            a.current_school,
+            g.full_name as guardian_name,
+            g.email as guardian_email,
+            g.phone as guardian_phone,
+            g.preferred_language
+          from inquiries i
+          join applicants a on a.id = i.applicant_id
+          join guardians g on g.id = i.guardian_id
+          left join staff s on s.id = i.assigned_staff_id
+          where i.id = ${inquiry_id}
+            and i.campus_id = ${campusId}
+        `;
 
-      const inquiry = rows[0];
+        const found = rows[0];
+        if (!found) {
+          return { inquiry: undefined, followupRows: [] };
+        }
+
+        const followups = await tx<FollowupQueryRow[]>`
+          select f.channel, f.note, f.created_at, s.full_name as logged_by
+          from followups f
+          left join staff s on s.id = f.staff_id
+          where f.inquiry_id = ${inquiry_id}
+          order by f.created_at desc
+          limit 5
+        `;
+        return { inquiry: found, followupRows: followups };
+      });
+
       if (!inquiry) {
         return toolError(NOT_FOUND_MESSAGE);
       }
-
-      const followupRows = await sql<FollowupQueryRow[]>`
-        select f.channel, f.note, f.created_at, s.full_name as logged_by
-        from followups f
-        left join staff s on s.id = f.staff_id
-        where f.inquiry_id = ${inquiry_id}
-        order by f.created_at desc
-        limit 5
-      `;
 
       const result: InquiryResult = {
         inquiryId: inquiry.inquiry_id,

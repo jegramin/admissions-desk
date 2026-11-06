@@ -5,7 +5,8 @@
   "private": true,
   "scripts": {
     "build": "tsc",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc -p test/tsconfig.json",
+    "test": "vitest run",
     "db:reset": "supabase db reset",
     "gen:types": "supabase gen types typescript > src/db/types.ts"
   },
@@ -23,7 +24,8 @@
   "devDependencies": {
     "@types/node": "^26.6.6",
     "supabase": "^3.0.0",
-    "typescript": "^7.0.2"
+    "typescript": "^7.0.2",
+    "vitest": "5.1.0"
   },
   "dependencies": {
     "@modelcontextprotocol/server": "^2.4.0",

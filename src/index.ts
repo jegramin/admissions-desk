@@ -1,6 +1,7 @@
 import { serveStdio } from '@modelcontextprotocol/server/stdio';
 import { loadConfig } from './config.js';
 import { createDbClient } from './db/client.js';
+import { createRunAsStaff } from './db/staff-transaction.js';
 import { loadActingStaff } from './staff-context.js';
 import { createServer } from './server.js';
 
@@ -12,4 +13,6 @@ console.error(
   `Admissions Desk: running as ${staff.fullName} (${staff.role}${staff.campusId ? `, ${staff.campusId}` : ''}).`
 );
 
-serveStdio(() => createServer(sql, staff));
+const runAsStaff = createRunAsStaff(sql, staff.id);
+
+serveStdio(() => createServer(runAsStaff, staff));
