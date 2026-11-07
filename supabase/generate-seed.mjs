@@ -6,8 +6,11 @@
 // branching logic) while avoiding ~300 hand-typed INSERT rows that would be
 // tedious to review and easy to get subtly wrong.
 //
-// Run: node generate-seed.mjs > ../../../admissions-desk/supabase/seed.sql
-// (adjust the output path to the target repo's supabase/seed.sql)
+// Run from the repo root: node supabase/generate-seed.mjs > supabase/seed.sql
+//
+// Every name is invented. Surnames are common ones belonging to no ruling or
+// political family, and no full name or school name should match a
+// well-known real person or school.
 
 const pad = (n, width) => String(n).padStart(width, '0');
 const pad2 = (n) => String(n).padStart(2, '0');
