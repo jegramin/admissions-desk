@@ -27,15 +27,14 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # No version input: the action reads the CLI version from pnpm-lock.yaml,
-      # so CI runs the same CLI as local development.
-      - uses: supabase/setup-cli@v3
-
+      # The Supabase CLI is the pinned devDependency, run through pnpm, so CI
+      # uses the lockfile's version. Not supabase/setup-cli: it runs npm inside
+      # the repo, which devEngines rejects (EBADDEVENGINES).
       # Tests talk to Postgres only, so start just the database container
       # rather than the full stack. Ports (553xx) come from supabase/config.toml.
-      - run: supabase db start
+      - run: pnpm exec supabase db start
 
-      - run: supabase db reset
+      - run: pnpm db:reset
 
       # No env vars or secrets: test/env.ts defaults to the local-only
       # credentials on the remapped ports, exactly as on a developer machine.
