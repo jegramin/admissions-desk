@@ -4,10 +4,6 @@ An MCP server that lets school admissions staff work with inquiry data through C
 
 [![CI](https://github.com/jegramin/admissions-desk/actions/workflows/ci.yml/badge.svg)](https://github.com/jegramin/admissions-desk/actions/workflows/ci.yml)
 
-## Demo
-
-Video: _link to be added_.
-
 ## The problem
 
 Aldermoor Schools (fictional) runs three campuses: Erbil, Dubai and Vienna. Each has counsellors handling family inquiries and a campus head, and there's a leadership team over all three. Staff need quick answers, such as which families haven't heard back, what was said last, or how the pipeline looks this week. Those answers come from records about children, including medical and learning-support notes. Each person should see only their own campus, only the fields their role allows, and every access should be recorded.
@@ -74,8 +70,8 @@ SENSITIVE (campus head only):
 | Fail closed | A missing, malformed or unknown staff id makes every policy match nothing, and `pipeline_summary()` raises `42501`. The server won't start if `ADMISSIONS_STAFF_ID` matches no staff member. |
 | Sensitive fields on request only | Date of birth, learning support and medical notes live in one table, `applicant_private`. They're returned only to the campus head of that campus, and only with `include_sensitive: true`. RLS refuses the rows to everyone else even if the server's check were wrong. |
 | Same "not found" for other campuses | A missing id and another campus's id both return "Inquiry not found or not accessible.", so probing ids reveals nothing. |
-| Audit log | Every tool call writes one `audit_log` row (`ok`, `denied` or `error`) in the same transaction. If the row can't be written, the call returns an error and no data. The table is append-only, even for admin roles. `log_followup` records `inquiry_id` and `channel` but never the note text. |
-| Human approval for writes | The committed [`.claude/settings.json`](.claude/settings.json) has an `ask` rule for `log_followup`. Claude Code checks ask rules before allow rules, so every write needs a person to approve it. |
+| Audit log | Every tool call writes one `audit_log` row (`ok`, `denied` or `error`) in the same transaction. If the row can't be written, the call returns an error and no data. Triggers reject `UPDATE` and `DELETE` for every role, and the app role can only `INSERT`. An admin can still `TRUNCATE` the table, as the test reset does. `log_followup` records `inquiry_id` and `channel` but never the note text. |
+| Human approval for writes | The committed [`.claude/settings.json`](.claude/settings.json) has an `ask` rule for `log_followup`. Claude Code checks ask rules before allow rules, so `log_followup` always asks for approval in Claude Code's normal permission modes. |
 
 ## Architecture
 
@@ -99,7 +95,7 @@ flowchart LR
   call -->|"postgres.js as admissions_app"| db
 
   subgraph db["Postgres (local Supabase)"]
-    rls["RLS on every table via current_staff()"]
+    rls["RLS on every protected table via current_staff()"]
     view["inquiry_activity view (security_invoker)"]
     fn["pipeline_summary() SECURITY DEFINER, counts only"]
     log["audit_log, append-only"]
@@ -194,7 +190,7 @@ The ids for all eight seed staff are in [docs/access-model.md](docs/access-model
 | postgres.js, not supabase-js | RLS needs the staff identity set inside the same transaction as the queries, with `set_config(…, true)`. supabase-js goes through the HTTP Data API and can't hold a transaction open. A direct connection can. |
 | Staff identity from an env var | Enough for one person running the server locally, and it keeps the access model testable. Real login is a production item (below). |
 | Calendar-day lower bound for the 3-working-day standard | `pipeline_summary` counts calendar days. Three working days span at most five calendar days on every campus's week, so the brief treats 6+ days as a breach. It ignores public holidays and can flag a breach a day or two late, and the prompt tells the model to say so. |
-| TypeScript 6, not 7 | typescript-eslint's type-aware rules need the TypeScript compiler API, which TypeScript 7 doesn't ship. Typecheck, build and lint all use 6.0.3, so they can't disagree about types. |
+| TypeScript 6, not 7 | typescript-eslint, which runs the type-aware lint rules, doesn't support TypeScript 7 yet. Typecheck, build and lint all use 6.0.3, so they can't disagree about types. |
 
 ## Known limits
 
